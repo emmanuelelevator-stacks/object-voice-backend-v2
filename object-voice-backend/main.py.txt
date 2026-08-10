@@ -1,0 +1,63 @@
+import io
+import torch
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from PIL import Image
+from transformers import BlipProcessor, BlipForConditionalGeneration
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+print("--> Loading Vision AI model...")
+processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
+model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
+print("--> Model loaded successfully!")
+
+@app.get("/")
+def read_root():
+    return {"status": "Vision AI backend is live!"}
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents)).convert("RGB")
+
+        # Center-crop to isolate the object in hand
+        width, height = image.size
+        left = width * 0.25
+        top = height * 0.25
+        right = width * 0.75
+        bottom = height * 0.75
+        cropped_image = image.crop((left, top, right, bottom))
+
+        # Pass a prompt to steer BLIP toward describing the object specifically
+        prompt = "a close up photo of a"
+        inputs = processor(cropped_image, text=prompt, return_tensors="pt")
+        
+        out = model.generate(**inputs, max_new_tokens=20)
+        
+        caption = processor.decode(out[0], skip_special_tokens=True)
+        clean_text = caption.strip().capitalize()
+        
+        print(f"--> AI Output: {clean_text}")
+
+        return {
+            "label": clean_text,
+            "confidence": 0.95
+        }
+
+    except Exception as e:
+        print("--> Error:", str(e))
+        return {"label": f"Server processing error: {str(e)}"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
