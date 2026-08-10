@@ -17,7 +17,7 @@ app.add_middleware(
 )
 
 # Checks Render environment variable first; uses fallback if set
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY = os.getenv("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")
 
 @app.get("/")
 def read_root():
