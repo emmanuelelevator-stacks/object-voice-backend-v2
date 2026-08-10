@@ -16,8 +16,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Checks Render environment variable first; uses direct key as fallback
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "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")
+# Checks Render environment variable first; uses fallback if set
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 @app.get("/")
 def read_root():
@@ -26,15 +26,15 @@ def read_root():
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
-        if not GROQ_API_KEY or GROQ_API_KEY == "YOUR_GROQ_API_KEY_HERE":
-            return {"label": "Server error: Please set GROQ_API_KEY in main.py or Render."}
+        if not GROQ_API_KEY:
+            return {"label": "Server error: GROQ_API_KEY is missing on Render."}
 
         client = Groq(api_key=GROQ_API_KEY)
 
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-        # Center crop frame
+        # Center crop frame for object focus
         width, height = image.size
         cropped_image = image.crop((width * 0.25, height * 0.25, width * 0.75, height * 0.75))
 
@@ -43,9 +43,9 @@ async def predict(file: UploadFile = File(...)):
         cropped_image.save(buffer, format="JPEG")
         base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
-        # Send request to Groq Vision
+        # Updated to stable Llama 3.2 Vision Instruct model
         response = client.chat.completions.create(
-            model="llama-3.2-11b-vision-preview",
+            model="llama-3.2-11b-vision-instruct",
             messages=[
                 {
                     "role": "user",
