@@ -3,3 +3,4 @@ uvicorn
 pillow
 requests
 python-multipart
+google-generativeai
