@@ -14,7 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-HF_API_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base"
+API_URL = "https://router.huggingface.co/hf-inference/models/Salesforce/blip-image-captioning-base"
 
 @app.get("/")
 def read_root():
