@@ -1,9 +1,8 @@
 import io
-import torch
+import requests
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
-from transformers import BlipProcessor, BlipForConditionalGeneration
 
 app = FastAPI()
 
@@ -15,10 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print("--> Loading Vision AI model...")
-processor = BlipProcessor.from_pretrained("Salesforce/blip-image-captioning-base")
-model = BlipForConditionalGeneration.from_pretrained("Salesforce/blip-image-captioning-base")
-print("--> Model loaded successfully!")
+HF_API_URL = "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-base"
 
 @app.get("/")
 def read_root():
@@ -30,34 +26,26 @@ async def predict(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-        # Center-crop to isolate the object in hand
+        # Center-crop object in hand
         width, height = image.size
-        left = width * 0.25
-        top = height * 0.25
-        right = width * 0.75
-        bottom = height * 0.75
-        cropped_image = image.crop((left, top, right, bottom))
+        cropped_image = image.crop((width * 0.25, height * 0.25, width * 0.75, height * 0.75))
 
-        # Pass a prompt to steer BLIP toward describing the object specifically
-        prompt = "a close up photo of a"
-        inputs = processor(cropped_image, text=prompt, return_tensors="pt")
-        
-        out = model.generate(**inputs, max_new_tokens=20)
-        
-        caption = processor.decode(out[0], skip_special_tokens=True)
-        clean_text = caption.strip().capitalize()
-        
-        print(f"--> AI Output: {clean_text}")
+        # Convert cropped image to JPEG bytes
+        buffer = io.BytesIO()
+        cropped_image.save(buffer, format="JPEG")
+        image_bytes = buffer.getvalue()
 
-        return {
-            "label": clean_text,
-            "confidence": 0.95
-        }
+        # Send image to Hugging Face Cloud API (uses under 30MB RAM)
+        response = requests.post(HF_API_URL, data=image_bytes)
+        result = response.json()
+
+        if isinstance(result, list) and len(result) > 0 and "generated_text" in result[0]:
+            clean_text = result[0]["generated_text"].strip().capitalize()
+            return {"label": clean_text, "confidence": 0.95}
+        elif isinstance(result, dict) and "error" in result:
+            return {"label": "AI model warming up, tap again in 5 seconds."}
+        else:
+            return {"label": "Could not identify object clearly."}
 
     except Exception as e:
-        print("--> Error:", str(e))
         return {"label": f"Server processing error: {str(e)}"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
