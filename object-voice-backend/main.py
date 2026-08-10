@@ -14,7 +14,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_URL = "https://router.huggingface.co/hf-inference/models/Salesforce/blip-image-captioning-base"
+# Variable definition using HF_API_URL
+HF_API_URL = "https://router.huggingface.co/hf-inference/models/Salesforce/blip-image-captioning-base"
 
 @app.get("/")
 def read_root():
@@ -26,24 +27,28 @@ async def predict(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-        # Center-crop object in hand
+        # Center-crop image frame
         width, height = image.size
         cropped_image = image.crop((width * 0.25, height * 0.25, width * 0.75, height * 0.75))
 
-        # Convert cropped image to JPEG bytes
+        # Convert to JPEG bytes
         buffer = io.BytesIO()
         cropped_image.save(buffer, format="JPEG")
         image_bytes = buffer.getvalue()
 
-        # Send image to Hugging Face Cloud API (uses under 30MB RAM)
-        response = requests.post(HF_API_URL, data=image_bytes)
+        # Send request using matching HF_API_URL variable
+        response = requests.post(
+            HF_API_URL, 
+            data=image_bytes,
+            headers={"Content-Type": "image/jpeg"}
+        )
         result = response.json()
 
         if isinstance(result, list) and len(result) > 0 and "generated_text" in result[0]:
             clean_text = result[0]["generated_text"].strip().capitalize()
             return {"label": clean_text, "confidence": 0.95}
         elif isinstance(result, dict) and "error" in result:
-            return {"label": "AI model warming up, tap again in 5 seconds."}
+            return {"label": f"Model starting up, retry in 5s: {result['error']}"}
         else:
             return {"label": "Could not identify object clearly."}
 
