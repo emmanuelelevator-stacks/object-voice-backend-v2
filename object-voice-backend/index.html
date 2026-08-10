@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Assistant for Visually Impaired</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+        }
+        #camera-feed, #snapshot-preview {
+            width: 90%;
+            max-width: 500px;
+            border-radius: 12px;
+            border: 3px solid #00ff88;
+        }
+        #snapshot-preview {
+            display: none; /* Hidden until a photo is snapped */
+        }
+        .btn-container {
+            margin-top: 20px;
+        }
+        button {
+            background-color: #00ff88;
+            color: #000;
+            border: none;
+            padding: 15px 25px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 8px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        #reset-btn {
+            background-color: #ff4444;
+            color: #fff;
+            display: none; /* Hidden until photo is taken */
+        }
+        #result {
+            margin-top: 20px;
+            font-size: 22px;
+            color: #00ff88;
+        }
+        canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Object Recognition Assistant</h2>
+    
+    <!-- Live camera feed -->
+    <video id="camera-feed" autoplay playsinline></video>
+    
+    <!-- Still photo preview after snap -->
+    <img id="snapshot-preview" alt="Scanned Object Snapshot" />
+    
+    <canvas id="snapshot-canvas"></canvas>
+    
+    <div class="btn-container">
+        <button id="scan-btn" onclick="captureAndScan()">📷 SNAP & SCAN</button>
+        <button id="reset-btn" onclick="resetCamera()">🔄 SCAN AGAIN</button>
+    </div>
+
+    <div id="result">Press the button or Spacebar to scan.</div>
+
+    <script>
+        const video = document.getElementById('camera-feed');
+        const preview = document.getElementById('snapshot-preview');
+        const canvas = document.getElementById('snapshot-canvas');
+        const resultDiv = document.getElementById('result');
+        const scanBtn = document.getElementById('scan-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        // Initialize Live Camera
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+            .then(stream => { video.srcObject = stream; })
+            .catch(err => { resultDiv.innerText = "Camera access denied or unavailable."; });
+
+        // Text-To-Speech Function
+        function speak(text) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1.0;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // Capture Snapshot & Send to Server
+        async function captureAndScan() {
+            resultDiv.innerText = "Scanning object...";
+            speak("Scanning");
+
+            // Match canvas dimensions to video dimensions
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Freeze screen: Display captured image and hide live video
+            const imageDataUrl = canvas.toDataURL('image/jpeg');
+            preview.src = imageDataUrl;
+            video.style.display = 'none';
+            preview.style.display = 'inline-block';
+
+            // Toggle control buttons
+            scanBtn.style.display = 'none';
+            resetBtn.style.display = 'inline-block';
+
+            // Convert canvas frame to Blob and submit to backend
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'capture.jpg');
+
+                try {
+                    // UPDATED TO YOUR LIVE RENDER SERVER URL
+                    const response = await fetch('https://object-voice-backend-v2-2.onrender.com/predict', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+                    const label = data.label || "Unrecognized object";
+
+                    resultDiv.innerText = "Detected: " + label;
+                    speak(label);
+
+                } catch (error) {
+                    resultDiv.innerText = "Error connecting to server.";
+                    speak("Server error, try again.");
+                }
+            }, 'image/jpeg');
+        }
+
+        // Reset back to live camera view
+        function resetCamera() {
+            preview.style.display = 'none';
+            video.style.display = 'inline-block';
+            scanBtn.style.display = 'inline-block';
+            resetBtn.style.display = 'none';
+            resultDiv.innerText = "Press the button or Spacebar to scan.";
+        }
+
+        // Accessibility shortcut (Spacebar)
+        document.body.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (video.style.display !== 'none') {
+                    captureAndScan();
+                } else {
+                    resetCamera();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
