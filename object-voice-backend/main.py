@@ -1,5 +1,6 @@
+import os
 import io
-import requests
+import google.generativeai as genai
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
@@ -14,12 +15,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Variable definition using HF_API_URL
-HF_API_URL = "https://router.huggingface.co/hf-inference/models/Salesforce/blip-image-captioning-base"
+# API Key fallback setup
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AQ.Ab8RN6JO6Uarqpvuh-s5fh84xDf2d9qyhGxCF2k9ItM9Dmk1vg")
+genai.configure(api_key=GEMINI_API_KEY)
+
+# Use fast vision model
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 @app.get("/")
 def read_root():
-    return {"status": "Vision AI backend is live!"}
+    return {"status": "Gemini Vision AI backend is live!"}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
@@ -27,30 +32,17 @@ async def predict(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
 
-        # Center-crop image frame
+        # Center crop frame to focus on object held in hand
         width, height = image.size
         cropped_image = image.crop((width * 0.25, height * 0.25, width * 0.75, height * 0.75))
 
-        # Convert to JPEG bytes
-        buffer = io.BytesIO()
-        cropped_image.save(buffer, format="JPEG")
-        image_bytes = buffer.getvalue()
+        # Direct Gemini prompt for rapid voice readout
+        prompt = "Identify the primary object in this image. Respond with only 1 to 3 words naming the object. No punctuation or full sentences."
+        
+        response = model.generate_content([prompt, cropped_image])
+        clean_text = response.text.strip().capitalize()
 
-        # Send request using matching HF_API_URL variable
-        response = requests.post(
-            HF_API_URL, 
-            data=image_bytes,
-            headers={"Content-Type": "image/jpeg"}
-        )
-        result = response.json()
-
-        if isinstance(result, list) and len(result) > 0 and "generated_text" in result[0]:
-            clean_text = result[0]["generated_text"].strip().capitalize()
-            return {"label": clean_text, "confidence": 0.95}
-        elif isinstance(result, dict) and "error" in result:
-            return {"label": f"Model starting up, retry in 5s: {result['error']}"}
-        else:
-            return {"label": "Could not identify object clearly."}
+        return {"label": clean_text, "confidence": 0.98}
 
     except Exception as e:
         return {"label": f"Server processing error: {str(e)}"}
